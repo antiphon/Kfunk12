@@ -438,7 +438,10 @@ function create() {
     });
 
     this.input.on('pointerdown', function (pointer, gameObjects) {
-        got_click(pointer.x, pointer.y, whose_turn);
+        // check withing!
+        if(pointer.x > leftbar+1 && pointer.x < leftbar + scenewidth-1 &&
+            pointer.y > 1 && pointer.y < sceneheight - 1)
+            got_click(pointer.x, pointer.y, whose_turn);
     }, this);
 
     // touch buttons
