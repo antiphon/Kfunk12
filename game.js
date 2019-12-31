@@ -25,13 +25,13 @@ var Kdrawareaheight = sceneheight;
 var Kdrawareawidth = rightbar;
 
 /* for the function */
-var function_post_pars = { std: true, clamp: true }; // 
+var function_post_pars = { std: true, clamp: true}; //
+var univariate = true; // K or K12? 
 var Rmax = sceneheight;
 var rstep = 10;
 var nR = Math.trunc(Rmax / rstep);
 var whose_turn = 0;
 var points = { x: [], y: [], m: [] };
-var K12est = [];
 var pir2 = [];
 var paircount = [];
 var edgeterm = [];
@@ -40,16 +40,27 @@ var windowarea = scenewidth * sceneheight;
 // settings
 var pointsize = 10; // px
 var pointcolors = [0xffaf00, 0x00afff];
+var draw_K = draw_K11;
+var update_K = update_K11;
+
+
+
 
 
 function preload() {
+    // scale constants for num stab
+    //    var C = 100000;
+    edgeterm = K11const;
+    edgeterm12 = K12const;
     for (let i = 0; i < nR; i++) {
         paircount[i] = 0;
         let r = i * rstep;
         pir2[i] = Math.PI * r * r;
     }
-    edgeterm = Kconst;    
 }
+
+
+
 
 function draw_points() {
     graphics.clear();
@@ -63,27 +74,19 @@ function draw_point(idx) {
 }
 
 
-/* Some helpers here */
-function toggleFunNormalise() {
-    function_post_pars.std = !function_post_pars.std;
-}
 
 
-/* Compute K incrementally */
-/* Toroidal edge correction */
+
+
+/* Compute K11 incrementally */
 /* just the counts of pairs */
-function update_K() {
-    if (counts[0] < 1 || counts[1] < 1) return;
+function update_K11() {
+    if (counts[0] < 1) return;
     // assuming last point is the new point
     var i0 = points.x.length - 1;
-    var m0 = points.m[i0];
     for (let i = 0; i < i0; i++) {
-        if (points.m[i] != m0) {
+        {
             /* toroidal?*/
-            //let dx = Math.abs(points.x[i0] - points.x[i]);
-            //let dy = Math.abs(points.y[i0] - points.y[i]);
-            //dx = Math.min(dx, scenewidth - dx);
-            //dy = Math.min(dy, sceneheight - dy);
             let dx = points.x[i0] - points.x[i];
             let dy = points.y[i0] - points.y[i];
             let d = Math.sqrt(dx * dx  +  dy * dy);
@@ -93,9 +96,130 @@ function update_K() {
     }
 }
 
-/* Draw K */
+/* Compute K12 incrementally */
+/* just the counts of pairs */
+function update_K12() {
+    if (counts[0] < 1 || counts[1] < 1) return;
+    // assuming last point is the new point
+    var i0 = points.x.length - 1;
+    var m0 = points.m[i0];
+    for (let i = 0; i < i0; i++) {
+        if (points.m[i] != m0) {
+            let dx = points.x[i0] - points.x[i];
+            let dy = points.y[i0] - points.y[i];
+            let d = Math.sqrt(dx * dx  +  dy * dy);
+            var idk = Math.floor(d / rstep) + 1;
+            for (let j = idk; j < nR; j++) paircount[j]++;
+        }
+    }
+}
 
-function draw_K() {
+
+
+/* Draw K11 */
+
+function draw_K11() {
+    var w = scenewidth;
+    var h = sceneheight;
+    // global correction
+    //
+    var n = counts[0];
+    var nn = n*n;
+    var n4 = nn*nn;
+    Kest = [];
+    Ksd  = []; // Poisson-marginals -approximation 
+    var smax = 0; 
+    var outs = [0,0]; // low upp
+    for (var i = 1; i < nR; i++) {
+        Kest[i] = 2 * paircount[i] * edgeterm[i] / nn - pir2[i];
+        let vi = n*(n-1)*( (n-2)*(n-3)*aa1[i] + 4*(n-2)*aa2[i] + 2*aa3[i] - n*(n-1)*aa3[i]*aa3[i] )/n4;
+        Ksd[i] = Math.sqrt(vi) * edgeterm[i];
+        smax = Ksd[i] > smax ? Ksd[i] : smax;
+        if(Kest[i] < -Ksd[i]*2) outs[0]++;
+        if(Kest[i] > Ksd[i]*2) outs[1]++;
+    }
+    /* what to actually draw etc */
+    var mean = [];
+    var upp = [];
+    var low = [];
+    var zero = [];
+    var curvemaxy = Kdrawareawidth; // vertical curves
+    if(function_post_pars.std) {
+        for(let i=1; i  <nR; i++){
+            mean[i] = Kest[i] / Ksd[i];
+            upp[i] = 2 ;
+            low[i] = -2 ;
+            zero[i] = 0;
+        }
+        scaler1 = (curvemaxy / 8);
+    }
+    else{
+        for(let i = 1; i < nR; i++) {
+            mean[i] = Kest[i];
+            upp[i] = 2 * Ksd[i];
+            low[i] = -2 * Ksd[i];
+            zero[i] = 0;
+        }
+        scaler1 = (curvemaxy / 2) / (smax*2);
+    }
+    
+    /* Line style */
+    graphics2.lineStyle(1, 0xFF00FF, 1.0);
+    /* go */
+    var xoff = leftbar + scenewidth + rightbar/2;
+    var yoff = 0;
+    
+    drawit = function(y) {
+        graphics2.beginPath();
+        // graphics2.moveTo(xoff, y0 - yoff * scaler1);
+        // for (let i = 1; i < nR; i++) {
+        //     var r = i * rstep;
+        //     graphics2.lineTo(xoff + r, yoff - y[i] * scaler1); // negative fto flip y-coord
+        // }
+        graphics2.moveTo(xoff + y[0] * scaler1, yoff);
+        for (let i = 1; i < nR; i++) {
+            var r = i * rstep * Kdrawareaheight/Rmax;
+            graphics2.lineTo(xoff + y[i] * scaler1, yoff + r); // negative fto flip y-coord
+        }
+        graphics2.strokePath();
+    }
+
+
+    graphics2.clear();
+    /* point area */
+    graphics2.lineStyle(1, 0x222222, 2.0);
+    graphics2.strokeRect(leftbar+1, 1, w + leftbar-2, h-2);
+    //    graphics2.strokeRect(leftbar, 0,  w, h);
+    // sidebars, to frame the game region.
+    /* left bar*/
+    graphics2.fillStyle(0x001200, 1.0);
+    graphics2.fillRect(0, 0, leftbar, h);
+    graphics2.lineStyle(1, 0x11ff2f, 1.0);
+    graphics2.strokeRect(0, 0, leftbar, h);
+    /* right draw area */
+    graphics2.fillStyle(0x001200, 1.0);
+    graphics2.fillRect(leftbar + w, 0, rightbar, h);
+    graphics2.strokeRect(leftbar+w, 0, rightbar, h);
+
+    /* 0 line */
+    graphics2.lineStyle(1, 0xbbbbbb, 1.0);
+    drawit(zero);
+    /* estimated L-r */
+    graphics2.lineStyle(2, 0xFF00FF, 1.0);
+    drawit(mean);
+    // /* CI */
+    graphics2.lineStyle(2, 0x550000, 1.0);
+    if(outs[0]) graphics2.lineStyle(2, 0xFF0000, 1.0);
+    drawit(low);
+    graphics2.lineStyle(2, 0x005500, 1.0);
+    if(outs[1])graphics2.lineStyle(2, 0x00FF00, 1.0);
+    drawit(upp);
+}
+
+
+/* Draw K12 */
+
+function draw_K12() {
     var w = scenewidth;
     var h = sceneheight;
 
@@ -111,12 +235,12 @@ function draw_K() {
     var smax = 0; 
     var outs = [0,0];
     for (var i = 1; i < nR; i++) {
-        K12est[i] = paircount[i] * edgeterm[i] / nn - pir2[i];
+        K12est[i] = paircount[i] * edgeterm12[i] / nn - pir2[i];
         let vi = (sn * c2[i] + c3[i]) / nn;
-        K12sd[i] = Math.sqrt(vi) * edgeterm[i];
+        K12sd[i] = Math.sqrt(vi) * edgeterm12[i];
         smax = K12sd[i] > smax ? K12sd[i] : smax;
-        if(K12est[i] < -smax*2) outs[0]++;
-        if(K12est[i] > smax*2) outs[1]++;
+        if(K12est[i] < -K12sd[i]*2) outs[0]++;
+        if(K12est[i] > +K12sd[i]*2) outs[1]++;
     }
     
     /* what to actually draw etc */
@@ -201,8 +325,8 @@ function draw_K() {
 // handle a click
 function got_click(x, y, m) {
     // integer resolution
-    x = x;//Math.round(x);
-    y = y;//Math.round(y);
+    //x = Math.round(x);
+    //y = Math.round(y);
     // check is it new
     var isnew = true;
     for (let xint = 0; xint < points.x.length; xint++) {
@@ -212,18 +336,21 @@ function got_click(x, y, m) {
         }
     }
     if (isnew) {
+        console.log("new: " + x + "," + y);
         counts[m]++;
         addpoint(x, y, m);
-        whose_turn = 1 - whose_turn;
-        update_K();
-        //debug("new: " + x + "," + y);
         draw_point(points.x.length - 1);
+        update_K();
         draw_K();
-        update_state_indicator();
+        
+        if(!univariate){
+            whose_turn = 1 - whose_turn;
+            draw_state_indicator();
+        }
     }
 }
 
-function update_state_indicator() {
+function draw_state_indicator() {
     graphics2.fillStyle(pointcolors[whose_turn], 1.0);
     graphics2.fillCircle(leftbar/2, sceneheight/2, leftbar/3);
 }
@@ -238,6 +365,18 @@ function addpoint(x, y, m) {
     points.y.push(y);
     points.m.push(m);
 }
+function simpoints(n) {
+    for (let i = 0; i < n; i++) {
+        let x = (scenewidth-2) * Math.random() + 1+leftbar;
+        let y = (sceneheight-2) * Math.random() + 1;
+        var m = whose_turn;
+        got_click(x, y, m);
+        //m = 1 - m;
+    }
+}
+
+
+
 
 function restart() {
     // clear points
@@ -249,17 +388,28 @@ function restart() {
         paircount[i] = 0;
     }
     draw_K();
+    if(!univariate) draw_state_indicator();
 }
 
-function simpoints(n) {
-    var m = whose_turn;
-    for (let i = 0; i < n; i++) {
-        let x = scenewidth * Math.random() + leftbar;
-        let y = sceneheight * Math.random() + 0;
-        got_click(x, y, m);
-        m = 1 - m;
+function toggleMultiPlayer() {
+    univariate = !univariate;
+    if(!univariate) {
+        draw_state_indicator();
+        draw_K = draw_K12;
+        update_K = update_K12;
+    }
+    else{
+        draw_K = draw_K11;
+        update_K = update_K11;
     }
 }
+/* Some helpers here */
+function toggleFunNormalise() {
+    function_post_pars.std = !function_post_pars.std;
+}
+
+
+
 
 
 
@@ -281,7 +431,10 @@ function create() {
             simpoints(10);
         } else if (event.key == "c") {
             restart();
-        }
+        }else if (event.key == "m") {
+            toggleMultiPlayer();
+            restart();
+        }        
     });
 
     this.input.on('pointerdown', function (pointer, gameObjects) {
@@ -294,9 +447,10 @@ function create() {
     var buttonno = this.add.text(2, 50, 'NO', 0).setInteractive().on('pointerup', function () { toggleFunNormalise(); draw_K(); });
     var buttoncl = this.add.text(2, sceneheight - 30, 'CL', 0).setInteractive().on('pointerup', function () { restart(); });
     //
-    var buttonr10 = this.add.text(1, 130, 'R10', 0).setInteractive().on('pointerup', function () { simpoints(10); });
+    var buttonr10 = this.add.text(1, 130,  'R10', 0).setInteractive().on('pointerup', function () { simpoints(10); });
+    var buttonMultiP = this.add.text(1, 160, 'Mu', 0).setInteractive().on('pointerup', function () { toggleMultiPlayer(); restart(); });
 
     draw_points();
     draw_K();
-    update_state_indicator();
+    if(!univariate) draw_state_indicator();
 }
